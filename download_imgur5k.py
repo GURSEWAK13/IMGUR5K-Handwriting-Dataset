@@ -8,14 +8,14 @@ LICENSE file in the root directory of this source tree.
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 IMGUR5K is shared as a set of image urls with annotations. This code downloads
-th images and verifies the hash to the image to avoid data contamination.
+the images and verifies the hash to the image to avoid data contamination.
 
 Usage:
-      python downloaad_imgur5k.py --dataset_info_dir <dir_with_annotaion_and_hashes> --output_dir <path_to_store_images>
+      python download_imgur5k.py --dataset_info_dir <dir_with_annotation_and_hashes> --output_dir <path_to_store_images>
 
 Output:
-     Images dowloaded to output_dir
-     data_annotations.json : json file with image annotation mappings -> dowloaded to dataset_info_dir
+     Images downloaded to output_dir
+     data_annotations.json : json file with image annotation mappings -> downloaded to dataset_info_dir
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 import argparse
@@ -46,16 +46,13 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
-# Image hash computed for image using md5..
+# Image hash computed for image using md5.
 def compute_image_hash(img_path):
     return hashlib.md5(open(img_path, 'rb').read()).hexdigest()
 
 # Create a sub json based on split idx
 def _create_split_json(anno_json, _split_idx):
-
     split_json = {}
-
     split_json['index_id'] = {}
     split_json['index_to_ann_map'] = {}
     split_json['ann_id'] = {}
@@ -73,11 +70,27 @@ def _create_split_json(anno_json, _split_idx):
 
     return split_json
 
+def download_image(url, output_path):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+    try:
+        response = requests.get(url, headers=headers, stream=True)
+        response.raise_for_status()
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"URL retrieval for {url} failed!!")
+        print(e)
+        return False
+
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Create a hash dictionary with image index and its correspond gt hash
+    # Create a hash dictionary with image index and its corresponding gt hash
     with open(f"{args.dataset_info_dir}/imgur5k_hashes.lst", "r", encoding="utf-8") as _H:
         hashes = _H.readlines()
         hash_dict = {}
@@ -85,26 +98,23 @@ def main():
         for hash in hashes:
             hash_dict[f"{hash.split()[0]}"] = f"{hash.split()[1]}"
 
-
     tot_evals = 0
     num_match = 0
     invalid_urls = []
-    # Download the urls and save only the ones with valid hash o ensure underlying image has not changed
+
+    # Download the URLs and save only the ones with valid hash to ensure underlying image has not changed
     for index in list(hash_dict.keys()):
         image_url = f'https://i.imgur.com/{index}.jpg'
-        img_data = requests.get(image_url).content
-        if len(img_data) < 100:
-            print(f"URL retrieval for {index} failed!!\n")
+        output_path = f'{args.output_dir}/{index}.jpg'
+
+        if not download_image(image_url, output_path):
             invalid_urls.append(image_url)
             continue
-        with open(f'{args.output_dir}/{index}.jpg', 'wb') as handler:
-            handler.write(img_data)
 
-        compute_image_hash(f'{args.output_dir}/{index}.jpg')
         tot_evals += 1
-        if hash_dict[index] != compute_image_hash(f'{args.output_dir}/{index}.jpg'):
-            print(f"For IMG: {index}, ref hash: {hash_dict[index]} != cur hash: {compute_image_hash(f'{args.output_dir}/{index}.jpg')}")
-            os.remove(f'{args.output_dir}/{index}.jpg')
+        if hash_dict[index] != compute_image_hash(output_path):
+            print(f"For IMG: {index}, ref hash: {hash_dict[index]} != cur hash: {compute_image_hash(output_path)}")
+            os.remove(output_path)
             invalid_urls.append(image_url)
             continue
         else:
